@@ -1,0 +1,304 @@
+import { Button, VerticalBox, HorizontalBox, CheckBox, ScrollView, LineEdit, TextEdit } from "std-widgets.slint";
+
+export global Theme {
+    in-out property <color> bg-dark: #0a0810;
+    in-out property <color> bg-panel: #130f1d;
+    in-out property <color> accent: #8a2be2;
+    in-out property <color> accent-light: #b066ff;
+    in-out property <color> text-main: #e0e0e0;
+    in-out property <color> text-muted: #6b5d80;
+    in-out property <color> border-color: #251b36;
+}
+
+component SettingsIcon inherits Rectangle {
+    width: 18px; height: 18px;
+    callback clicked;
+    
+    Path {
+        width: 100%; height: 100%;
+        stroke: touch.has-hover ? Theme.accent-light : Theme.text-muted;
+        stroke-width: 2px;
+        commands: "M 9 6.5 A 2.5 2.5 0 1 0 9 11.5 A 2.5 2.5 0 1 0 9 6.5 M 9 1.5 L 9 3.5 M 9 14.5 L 9 16.5 M 1.5 9 L 3.5 9 M 14.5 9 L 16.5 9 M 3.7 3.7 L 5.3 5.3 M 12.7 12.7 L 14.3 14.3 M 3.7 14.3 L 5.3 12.7 M 12.7 3.7 L 14.3 5.3";
+    }
+    touch := TouchArea { 
+        mouse-cursor: pointer; 
+        clicked => { root.clicked(); } 
+    }
+}
+
+export component SettingsDialog inherits Window {
+    width: 450px; height: 350px;
+    title: "Настройки"; 
+    background: transparent;
+    no-frame: true;
+    
+    in-out property <string> excluded-tags;
+    in-out property <string> current-path;
+    callback move-window(length, length);
+    callback select-path();
+    callback save-and-close(string);
+
+    Rectangle {
+        width: 100%; height: 100%;
+        background: Theme.bg-dark; 
+        border-width: 1px; 
+        border-color: Theme.border-color; 
+        border-radius: 12px;
+        clip: true;
+
+        TouchArea {
+            height: 50px;
+            y: 0;
+            moved => { root.move-window(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y); }
+        }
+
+        VerticalBox {
+            padding: 20px; spacing: 15px;
+            
+            Text { 
+                text: "НАСТРОЙКИ СОХРАНЕНИЯ"; 
+                color: Theme.accent; 
+                font-size: 14px; 
+                font-weight: 800; 
+            }
+            
+            VerticalBox {
+                padding: 0; spacing: 5px;
+                Text { text: "Путь для очищенных логов:"; color: Theme.text-muted; font-size: 12px; }
+                HorizontalBox {
+                    padding: 0; spacing: 10px;
+                    path-input := LineEdit { 
+                        text: root.current-path; 
+                        font-size: 13px;
+                        placeholder-text: "Путь не выбран...";
+                    }
+                    Button { 
+                        text: "Обзор"; 
+                        clicked => { root.select-path(); }
+                    }
+                }
+            }
+
+            VerticalBox {
+                padding: 0; spacing: 5px;
+                Text { text: "Исключить строки (через запятую):"; color: Theme.text-muted; font-size: 12px; }
+                LineEdit {
+                            text: root.excluded-tags;
+                            placeholder-text: "[Объявление], [Реклама]";
+                            edited(t) => { root.excluded-tags = t; }
+                }
+            }
+
+            Rectangle {
+                height: 45px; 
+                background: ta.has-hover ? Theme.accent-light : Theme.accent; 
+                border-radius: 8px;
+                animate background { duration: 150ms; }
+
+                Text { text: "ПРИМЕНИТЬ"; color: white; font-weight: 700; }
+                
+                ta := TouchArea { 
+                    mouse-cursor: pointer;
+                    clicked => { root.save-and-close(path-input.text); } 
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    width: 1000px; height: 600px; title: "LogCleaner"; no-frame: true; background: transparent;
+    
+    in-out property <bool> add-spaces-between-lines: false;
+    in-out property <bool> remove-non-rp: false;
+    in-out property <bool> use-base-list: true;
+    in-out property <string> status-msg: "Система готова к работе";
+    in-out property <bool> processing: false;
+    in-out property <string> log-preview-text: "После форматирования здесь появится предпросмотр файла...";
+    in-out property <string> found-logs: "0 MB";
+    in-out property <string> file-name: "log.txt";
+    in-out property <string> line-count: "0";
+
+    in-out property <bool> is-updating: false;
+    in-out property <float> update-progress: 0.0;
+    in-out property <string> update-status: "Проверка обновлений...";
+
+    callback close-window();
+    callback move-window(length, length);
+    callback request-cleanup();
+    callback open-settings();
+    callback select-file();
+    callback save-and-close();
+
+    Rectangle {
+        background: Theme.bg-dark; border-radius: 16px; border-width: 1px; border-color: Theme.border-color; clip: true;
+        
+        VerticalBox {
+            padding: 0; spacing: 0;
+
+            TouchArea {
+                height: 45px;
+                moved => { root.move-window(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y); }
+                Rectangle {
+                    background: Theme.bg-panel;
+                    HorizontalBox {
+                        padding-left: 20px; padding-right: 15px; alignment: space-between;
+                        Text { text: "LOG CLEANER | BY ORSTED_DREIV"; color: Theme.accent; font-size: 14px; font-weight: 800; vertical-alignment: center; }
+                        Rectangle {
+                            width: 30px; height: 30px; border-radius: 6px; 
+                            background: close-t.has-hover ? #ff4545 : transparent;
+                            animate background { duration: 150ms; }
+                            Text { text: "×"; color: white; font-size: 22px; }
+                            close-t := TouchArea { clicked => { root.close-window(); } }
+                        }
+                    }
+                }
+            }
+
+            HorizontalBox {
+                padding: 25px; spacing: 25px;
+
+                VerticalBox {
+                    width: 380px; spacing: 20px;
+                    
+                    VerticalBox {
+                        spacing: 15px;
+                        HorizontalBox {
+                            alignment: start; spacing: 10px;
+                            Rectangle { width: 12px; height: 12px; border-radius: 6px; background: Theme.accent; y: 6px; }
+                            SettingsIcon { clicked => { root.open-settings(); } }
+                            Text { text: "Параметры"; color: Theme.text-main; font-size: 18px; font-weight: 600; }
+                        }
+                        
+                        Rectangle {
+                            height: 250px; 
+                            background: Theme.bg-panel; 
+                            border-radius: 12px; 
+                            border-width: 2px; 
+                            border-color: root.file-name != "log.txt" ? Theme.accent : Theme.border-color;
+
+                            TouchArea {
+                                clicked => { root.select-file(); }
+                                mouse-cursor: pointer;
+                            }
+    
+                            Text { 
+                                text: root.file-name == "log.txt" ? "Перетащите файл сюда\n(.txt, .log)" : "Файл принят:\n" + root.file-name; 
+                                color: root.file-name != "log.txt" ? Theme.text-main : Theme.text-muted;
+                                font-size: 15px; 
+                                horizontal-alignment: center; vertical-alignment: center; 
+                            }
+                        }
+                    }
+
+                    VerticalBox {
+                        alignment: end; spacing: 15px;
+                        CheckBox {
+                            text: "Использовать базовый список слов?";
+                            checked: root.use-base-list;
+                            toggled => { root.use-base-list = self.checked; }
+                        }
+
+                        CheckBox { 
+                            text: "Разделять пробелами между строк?"; 
+                            checked: root.add-spaces-between-lines;
+                            toggled => { root.add-spaces-between-lines = !root.add-spaces-between-lines; }
+                         }
+
+                         CheckBox {
+                            text: "Удалять NonRP чат?";
+                            checked: root.remove-non-rp;
+                            toggled => { root.remove-non-rp = self.checked; }
+                        }
+                        Rectangle {
+                            height: 55px;
+                            background: !root.processing && root.file-name != "log.txt" ? Theme.accent : Theme.text-muted;
+                            border-radius: 12px;
+                            animate background { duration: 120ms; }
+                            Text { text: "Отформатировать"; color: white; font-weight: 700; font-size: 17px; }
+                            btn-t := TouchArea { 
+                                enabled: !root.processing && root.file-name != "log.txt"; 
+                                clicked => { root.request-cleanup(); } 
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: Theme.bg-panel; border-radius: 16px; border-width: 1px; border-color: Theme.border-color;
+                    
+                    VerticalBox {
+                        padding: 10px; spacing: 10px;
+                        
+                        Rectangle {
+                            background: #00000044; border-radius: 8px; clip: true;
+                            ScrollView {
+                                width: 100%; height: 100%;
+                                VerticalBox {
+                                    padding: 15px;
+                                    Text {
+                                        text: root.log-preview-text;
+                                        color: Theme.text-main; font-size: 13px;
+                                        font-family: "Noto Sans, Roboto, sans-serif";
+                                        wrap: no-wrap;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            height: 38px; spacing: 1px;
+                            Rectangle { background: Theme.bg-dark; border-radius: 6px; Text { text: "Имя: " + root.file-name; color: Theme.text-muted; font-size: 11px; } }
+                            Rectangle { background: Theme.bg-dark; border-radius: 6px; Text { text: "Размер: " + root.found-logs; color: Theme.text-muted; font-size: 11px; } }
+                            Rectangle { background: Theme.bg-dark; border-radius: 6px; Text { text: "Строк: " + root.line-count; color: Theme.text-muted; font-size: 11px; } }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.is-updating : Rectangle {
+            background: #1a1a1acc;
+            z: 100;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 20px;
+                
+                Text {
+                    text: root.update-status;
+                    color: Theme.accent;
+                    font-size: 20px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Rectangle {
+                    width: 400px;
+                    height: 16px;
+                    background: Theme.bg-dark;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.border-color;
+                    
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * root.update-progress;
+                        height: parent.height;
+                        background: Theme.accent;
+                        border-radius: 8px;
+                        
+                        animate width { duration: 150ms; easing: ease-out; }
+                    }
+                }
+
+                Text {
+                    text: "Пожалуйста, подождите. Приложение обновит список исключений.";
+                    color: Theme.text-muted;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
